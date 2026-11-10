@@ -3,7 +3,31 @@ import aiohttp
 from typing import Any
 from ..config import Config
 
-async def search_movie(title:str,  year: int | None = None ) -> dict[str, Any] | str:
+OMDB_URL = "https://www.omdbapi.com/"
+FIELDS = ["Title", "Year", "Director", "Actors", "Runtime", "imdbRating",
+          "Rated", "Genre", "Language", "Plot", "Poster", "imdbID"]
+
+_cache: dict[tuple[str, int | None], dict[str, Any]] = {}
+
+
+
+async def _fetch(session: aiohttp.ClientSession, params: dict) -> dict:
+    """Faz uma requisição ao OMDb e devolve o JSON."""
+    async with session.get(OMDB_URL, params=params,
+                           timeout=aiohttp.ClientTimeout(total=10)) as response:
+        response.raise_for_status()          # status diferente de 200 vira exceção
+        return await response.json()
+
+
+def _is_real_movie(data: dict, year: int | None) -> bool:
+    """Recusa resultado vazio, registro lixo (sem duração) e ano que não bate."""
+    if data.get("Response") != "True" or data.get("Runtime") in (None, "N/A"):
+        return False
+    found_year = (data.get("Year") or "")[:4]
+    return year is None or (found_year.isdigit() and abs(int(found_year) - year) <= 1)
+
+
+async def search_movie(title: str, year: int | None = None) -> dict[str, Any] | str:
     """Busca dados de um filme no OMDb: nota IMDb, duração, diretor, elenco e pôster.
 
     Args:
@@ -14,41 +38,34 @@ async def search_movie(title:str,  year: int | None = None ) -> dict[str, Any] |
         Dados do filme. A URL do pôster vem no campo "Poster".
     """
 
-    api_key= Config.OMDB_API_KEY
+    key = (title.lower(), year)  # Early return se filme está no cache 
+    if key in _cache:
+        return _cache[key]
 
-    params={
-        "apikey": api_key,
-        "t": title,           # Parâmetro de título
-        "type": "movie",      # Filtra apenas filmes
-        "plot": "short",       # Retorna enredo resumido
-        "v": "1"              # versão da API 
-    }
-    if year:  # adiciona parâmetro de ano de lançamento
+    params = {
+        "apikey": Config.OMDB_API_KEY, 
+        "t": title, 
+        "type": "movie", 
+        "plot": "short"
+        }
+    if year:
         params["y"] = str(year)
-     
-    
-    async with aiohttp.ClientSession() as session:
 
-        try:
-            async with session.get(
-                "https://www.omdbapi.com/",
-                params=params,
-                timeout=aiohttp.ClientTimeout(total=10)  # Timeout de 10 segundos
-            ) as response:
-                if response.status != 200:
-                    return f"Erro ao buscar filme: Status {response.status}"
-                
-                data = await response.json()
+    try:
+        async with aiohttp.ClientSession() as session:
+            data = await _fetch(session, params)
+            if year and not _is_real_movie(data, year):
+                params.pop("y")                  # tenta de novo sem o ano
+                data = await _fetch(session, params)
+    except Exception as e:
+        return f"Erro na busca do filme: {title} ({e})"
 
-                if data.get("Response") == "False":  
-                    return f"Filme não encontrado: {title}"
-                
+    if not _is_real_movie(data, year):
+        return f"Filme não encontrado: {title}"
+    result = {k: None if data.get(k) == "N/A" else data.get(k) for k in FIELDS} # gera o dicionário de resposta dinamicamente usando os FIELDS
+    _cache[key] = result          # só guarda no cache quando a busca deu certo
+    return result
 
-                fields = ["Title", "Year", "Director", "Actors", "Runtime", "imdbRating", "Rated", "Genre", "Language", "Plot", "Poster"] #! Retorna somente os fields necessários para o agente e a LLM
-                return {k: data.get(k) for k in fields}
-        
-        except Exception as e:
-            return f"Erro na busca do filme: {title}"
 
 
 
