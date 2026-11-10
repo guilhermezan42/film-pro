@@ -1,32 +1,47 @@
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from pydantic import BaseModel, Field, computed_field
+from typing import Optional, List, Literal
 
 
-class Cast(BaseModel):
-    """Informações sobre membro do elenco"""
-    name: str = Field(..., description="Nome do ator/atriz")
-    character: Optional[str] = Field(None, description="Nome do personagem interpretado")
 
+AgeRating = Literal["G", "PG", "PG-13", "R", "NC-17"]
 
-class Movie(BaseModel):
-    """Modelo estruturado para dados de filme"""
-    title: str = Field(..., description="Título do filme")
+#& O que o LLM devolve: escolha e textos em português 
+class MovieChoice(BaseModel):
+    title: str = Field(..., description="O mesmo título usado no search_movie")
     release_year: int = Field(..., description="Ano de lançamento")
-    director: str = Field(..., description="Diretor principal")
-    genres: List[str] = Field(..., description="Gênero e subgêneros")
-    imdb_rating: float = Field(..., description="Classificação IMDB (foco em 7.5+)")
-    duration_minutes: int = Field(..., description="Duração em minutos")
-    primary_language: str = Field(..., description="Idioma principal")
-    synopsis: str = Field(..., description="Sinopse breve e envolvente")
-    age_rating: str = Field(..., description="Classificação etária (ex: PG, PG-13, 16, 18)")
-    content_warnings: Optional[List[str]] = Field(None, description="Avisos de conteúdo")
-    cast: List[Cast] = Field(default_factory=list, description="Elenco notável")
-    poster_url: Optional[str] = Field(None, description="URL do pôster")
-    streaming_platforms: Optional[List[str]] = Field(None, description="Plataformas de streaming")
-    recommendation_reason: str = Field(..., description="Breve explicação para a recomendação")
+    primary_language: str = Field(..., description="Idioma principal, em português (ex: Inglês)")
+    synopsis: str = Field(..., description="Sinopse em português, até 250 caracteres, baseada no Plot")
+    content_warnings: Optional[List[str]] = Field(None, description="Avisos de conteúdo, em português")
+    recommendation_reason: str = Field(..., description="Por que combina com o pedido do usuário")
+
+
+class AgentRecommendation(BaseModel):
+    movies: List[MovieChoice] = Field(..., description="De 5 a 10 filmes, do mais ao menos relevante")
+
+
+#& O que a API devolve: fatos do OMDb + textos do LLM 
+class Movie(BaseModel):
+    title: str
+    release_year: int
+    director: Optional[str] = None
+    genres: List[str] = Field(default_factory=list)
+    imdb_rating: Optional[float] = None
+    duration_minutes: Optional[int] = None
+    age_rating: Optional[AgeRating] = None
+    cast: List[str] = Field(default_factory=list)
+    poster_url: Optional[str] = None
+    streaming_platforms: Optional[List[str]] = None
+    primary_language: str
+    synopsis: str
+    content_warnings: Optional[List[str]] = None
+    recommendation_reason: str
 
 
 class MovieRecommendation(BaseModel):
-    """Resposta estruturada com múltiplas recomendações"""
-    movies: List[Movie] = Field(..., description="Lista de filmes recomendados (mínimo 5)")
-    total_recommendations: int = Field(..., description="Quantidade de filmes recomendados")
+    movies: List[Movie]
+
+    @computed_field
+    @property
+    def total_recommendations(self) -> int:
+        return len(self.movies)
+
