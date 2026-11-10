@@ -1,11 +1,15 @@
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+import logging
+
 
 from agent.core import recommendations 
 from agent.models.movies import MovieRecommendation
 
 router = APIRouter()
+
+logger = logging.getLogger("uvicorn.error")   # o logger que o uvicorn já mostra no terminal
 
 class RecommendationRequest(BaseModel):
     preferences: str = Field(
@@ -45,8 +49,11 @@ async def get_recommendations(request: RecommendationRequest)->RecommendationRes
             message="Recomendações geradas com sucesso"
         )
     
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.exception("Erro ao processar recomendações")   # imprime o traceback completo
         raise HTTPException(
             status_code=500,
-            detail=f"Erro ao processar recomendações: {str(e)}"
-    )
+            detail=f"Erro ao processar recomendações: {str(e)}",
+        )
