@@ -9,6 +9,7 @@ class Config:
 
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
     OMDB_API_KEY = os.getenv("OMDB_API_KEY")
+    TMDB_API_KEY = os.getenv("TMDB_API_KEY")   # opcional: sem ela, streaming_platforms vem null
 
     @classmethod
     def validate(cls):
